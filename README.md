@@ -24,7 +24,7 @@ There are five commands;
 
 **&** = Display the current line.
 
-**%** = Pad routine  fills the line to the CR with nulls.
+**%** = Pad routine  fills the line to the next CR with nulls.
 
 **$** = Executes the code from the current entry pointer location.
 
