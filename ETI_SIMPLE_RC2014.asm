@@ -122,6 +122,7 @@ jump:		call vcom
 jloop:		cp (hl)
 			inc hl
 			jp nz,jloop
+            dec d
 			jp p,jloop
 			ret
 			
@@ -133,8 +134,8 @@ retn:		ld hl,(radr)
 match:		ld a,(hl)
 			inc hl
 			sub c
-			ld b,0x00
-			ret pe
+			ld b,0xaf
+			ret z
 			ld b,0x00
 			ret
 			
