@@ -1,0 +1,561 @@
+0001   0000             ; SIMPLE - ETI January 1979
+0002   0000             ; This version for Southern Cross Z80 Computer 
+0003   0000             ; and Talking Electronics TEC-1F
+0004   0000             
+0005   0000             ;originally converted from 8080 assembler to Z80 assembler
+0006   0000             ;for the RC2014 Micro board by Ken Boak September 2021
+0007   0000             
+0008   0000             ;comments added from original source code and ported to
+0009   0000             ;the above-mentioned Z80 boards by Craig Jones October 2021
+0010   0000             ;assembled using TASM 3.2
+0011   0000             
+0012   0000             ;uncomment when using the TEC-1F
+0013   0000             ;#define TEC-1F
+0014   0000             
+0015   0000             ;Small Interpretive microprocessor language experiment
+0016   0000             ;###################     SIMPLE     ##################
+0017   0000             ;written by Tim Hendtlass
+0018   0000             ;October 1978
+0019   0000             ;Version 2??  25/10/78
+0020   0000             
+0021   0000             
+0022   0000             ;first tell the assembler where the program is to start
+0023   0000             
+0024   2000                         .ORG $2000
+0025   2000                         
+0026   2000             ;the program proper starts here
+0027   2000             ;this is the master text edit routine
+0028   2000             
+0029   2000 21 2D 22    start:      ld hl,uprog     ;point hl to the start of the user program area
+0030   2003 F9          			ld sp,hl        ;stack will start just below the user program
+0031   2004             
+0032   2004 11 04 20    tloop:		ld de,tloop     ;tloop address to de
+0033   2007 D5          			push de         ;and onto the top of the stack
+0034   2008                                         ;this lets us return to tloop
+0035   2008                                         ;with a return instruction
+0036   2008 CD F3 20    			call ci         ;get and echo a character
+0037   200B 2B          			dec hl
+0038   200C FE 5F       			cp $5f          ;was it backspace (5f)?
+0039   200E C8          			ret z           ;yes, we have already done the
+0040   200F             			                ;necessary correction, so back
+0041   200F             			                ;to tloop for the next character
+0042   200F 23          			inc hl          ;it wasn't so restore hl
+0043   2010             
+0044   2010 D6 26       			sub '&'         ;was it & (ampersand)
+0045   2012 CA 96 20    			jp z,type       ;yes,display next line
+0046   2015 3C          			inc a           ;was it % (percent)
+0047   2016 CA 2B 20    			jp z,pad        ;yes,go pad and return to tloop
+0048   2019                                         ;from the pad routine
+0049   2019 3C          			inc a           ;was it $ (dollar)
+0050   201A CA 5A 20    			jp z,exec0      ;yes,execute the user program
+0051   201D 3C          			inc a           ;was it # (hash)
+0052   201E CA 00 20    			jp z,start      ;yes, back to start-stack will be
+0053   2021                                         ;cleaned up automatically by the 
+0054   2021                                         ;first two instructions!
+0055   2021                                         
+0056   2021             ;if it was none of these it must have been a character
+0057   2021             ;to put into the user program.before we can do this we
+0058   2021             ;must restore the character the way it was when we first
+0059   2021             ;got it from the routine ci
+0060   2021             
+0061   2021 C6 23       			add a,$23       ;restore it as it was
+0062   2023 77          			ld (hl),a       ;put it in the user program 
+0063   2024 23          			inc hl          ;and point to the next sequential
+0064   2025                                         ;location in the user program area
+0065   2025                                         
+0066   2025             ;if that was a carriage return (cr) we just put away we
+0067   2025             ;now send a line feed (lf) to keep the terminal happy
+0068   2025             
+0069   2025 FE 0D       			cp $0d          ;was it cr?
+0070   2027 CC 53 20    			call z,plf      ;if so type a lf
+0071   202A                                         ;note-this must be a call
+0072   202A C9          			ret             ;in either case back to tloop
+0073   202B                                         ;for the next character
+0074   202B                                         
+0075   202B             ;that is the end of the master text edit routine
+0076   202B             
+0077   202B             ;now for the main subroutines that the master
+0078   202B             ;routine calls  in case you wish to modify the 
+0079   202B             ;above note that the interpreter (exec) also
+0080   202B             ;uses the com routine. the type subroutine will
+0081   202B             ;be found as part of the interpreter
+0082   202B             
+0083   202B             ;the pad routine-it must precede the com routine
+0084   202B             ;as it 'falls through to it'
+0085   202B             
+0086   202B 16 80       pad:		ld d,$80     ;set common routine flag = pad
+0087   202D             
+0088   202D             ;the common (com) routine if entered with D => 80h it
+0089   202D             ;pads the user program with nulls. it starts at the 
+0090   202D             ;the location pointed to by hl and pads up to but not
+0091   202D             ;including the first location in which it finds a cr. a
+0092   202D             ;cr and lf are then sent to the terminal. if on entry d < 80h
+0093   202D             ;it types the contents of the user program area
+0094   202D             ;from the location pointed to by hl. it types the text
+0095   202D             ;until a cr is found. this cr is typed and then a lf is
+0096   202D             ;also typed in all cases there is a safety count of 64
+0097   202D             ;in force-if 64 characters have been typed or padded
+0098   202D             ;without a cr being found a '?' is typed and the 
+0099   202D             ;routine aborts to start
+0100   202D             
+0101   202D C5          com:		push bc        ;save bc on the stack to make some room
+0102   202E 06 40       			ld b,$40       ;set a safety count of 64
+0103   2030 7E          com1:		ld a,(hl)      ;get a character to a
+0104   2031 FE 0D       			cp $0d         ;is it cr?
+0105   2033 CA 4E 20    			jp z,com2      ;job finished when we find a cr
+0106   2036                                        ;so clean up by typing both a cr and lf
+0107   2036 4F          			ld c,a         ;copy a into c in case we are to type
+0108   2037 7A          			ld a,d         ;get the flag
+0109   2038 07          			rlca           ;move bit 7 into the carry flag
+0110   2039 D2 3E 20    			jp nc,nopad    ;no carry means don't pad
+0111   203C 36 00       			ld (hl),$00    ;if there is a carry we must
+0112   203E                                        ;pad so put in a null
+0113   203E                                        
+0114   203E             ;note- the last instruction does not affect the state 
+0115   203E             ;of the carry flag so if the last instruction
+0116   203E             ;was done the next won't be
+0117   203E             
+0118   203E D4 F9 20    nopad:		call nc,co     ;no carry,so type character
+0119   2041 23          			inc hl         ;point to next location to treat
+0120   2042 05          			dec b          ;64 characters yet?
+0121   2043 C2 30 20    			jp nz,com1     ;no,go and get more
+0122   2046 0E 3F       			ld c,'?'       ;yes ,we have a problem
+0123   2048 CD F9 20    			call co        ;print a '?'
+0124   204B C3 00 20    			jp start       ;and abort to start
+0125   204E                         
+0126   204E 4E          com2:		ld c,(hl)      ;put the cr in c
+0127   204F 23          			inc hl         ;move over the cr
+0128   2050 CD F9 20    			call co        ;print it
+0129   2053 0E 0A       plf:		ld c,$0a       ;load c with a lf
+0130   2055 CD F9 20    			call co        ;print it
+0131   2058 C1          			pop bc         ;restore bc
+0132   2059 C9          			ret            ;and back to whoever called us
+0133   205A             
+0134   205A             ; end of text editor and it's main support routines
+0135   205A             
+0136   205A             ;this is the start of the interpreter main routine
+0137   205A             
+0138   205A             ;when we arrive at exec we have the address of tloop
+0139   205A             ;on the top of the stack and the address at which we 
+0140   205A             ;wish to start execution of the user program in HL
+0141   205A             ;all the other registers are as yet undefined but
+0142   205A             ;will have the following uses -
+0143   205A             ;d = marker counter or print/pad flag
+0144   205A             ;e= user counter
+0145   205A             ;b= result of last match (af=yes,0=no)
+0146   205A             ;c= last character that was input in response to an accept command
+0147   205A             
+0148   205A             ;first we lose the address of tloop from the top 
+0149   205A             ;of the stack as we no longer need it
+0150   205A             
+0151   205A D1          exec0:		pop de     ;there, lost it
+0152   205B             ;now we put the address of exec onto the top of the stack
+0153   205B             ;without altering any registers  this lets us
+0154   205B             ;return to exec by a simple return instruction
+0155   205B             ;of course we must do this again each time we return to exec
+0156   205B             ;as we 'use up' the address getting there
+0157   205B             
+0158   205B E5          exec:       push hl            ;put hl on stack
+0159   205C 21 5B 20    			ld hl,exec         ;put address of exec in hl
+0160   205F E3          			ex (sp),hl         ;swap hl with top of stack
+0161   2060 7E          			ld a,(hl)          ;get a character from the user program area
+0162   2061 23          			inc hl             ;point to next character for next time round
+0163   2062 FE 5A       			cp 'Z'             ;no statement starts with 'Z' or anything beyond that
+0164   2064 D2 8C 20    			jp nc,error        ;so if it's > or = 'Z' its an error!
+0165   2067 D6 41       			sub 'A'            ;subtract ascii 'A'
+0166   2069 D8          			ret c              ;ignore it if it was < 'A'
+0167   206A                         
+0168   206A             ;note it could have been a CR, a marker (*)
+0169   206A             ;an optional statement delineator or even
+0170   206A             ;a number put in by some other line oriented text
+0171   206A             ;editor. in any case we don't want to know about it
+0172   206A             ;at the moment so we just jump over it
+0173   206A             
+0174   206A             ;we now have the identifying key letter from which
+0175   206A             ;ascii 'A' has been subtracted in register a, we look up in a table
+0176   206A             ;starting at tbase to find the least
+0177   206A             ;significant byte of the address of the subroutine
+0178   206A             ;which performs the actual statement as the whole 
+0179   206A             ;interpreter fits in 256 bytes we already know the 
+0180   206A             ;most significant byte
+0181   206A             
+0182   206A E5          			push hl            ;we need a little room
+0183   206B 21 73 20    			ld hl,tbase        ;address of first entry in table to hl
+0184   206E 85          			add a,l            ;add l to the key letter in a
+0185   206F                                            ;which is in the range from 
+0186   206F                                            ;a=0 to a=25
+0187   206F 6F          			ld l,a             ;now hl has the address
+0188   2070                                            ;of the entry we want
+0189   2070 6E          			ld l,(hl)          ;now hl has the address of
+0190   2071                                            ;the subroutine we want
+0191   2071 E3          			ex (sp),hl         ;put this on the top of the 
+0192   2072                                            ;stack and restore the
+0193   2072                                            ;original hl all at once
+0194   2072 C9          			ret                ;and off to the address which
+0195   2073                                            ;we just put on the stack
+0196   2073             
+0197   2073             ;the next 25 bytes contain the least significant
+0198   2073             ;byte of the subroutines that actually perform
+0199   2073             ;the action required to do the statement, they are
+0200   2073             ;in order, a (accept) first to y (yes) last
+0201   2073             ;the form mod 256 (%256) which appears below is a way 
+0202   2073             ;of telling my assembler to only use the  least
+0203   2073             ;significant 8 bits of the address
+0204   2073             
+0205   2073 F3          tbase:		.DB ci %256           ; A
+0206   2074 8C          			.DB error %256        ; B
+0207   2075 C1          			.DB skip %256         ; C
+0208   2076 CF          			.DB dec_cnt %256      ; D
+0209   2077 91          			.DB end1 %256         ; E
+0210   2078 8C          			.DB error %256        ; F
+0211   2079 DA          			.DB get %256          ; G
+0212   207A 8C          			.DB error %256        ; H
+0213   207B D1          			.DB inc_cnt %256      ; I
+0214   207C 9E          			.DB jump %256         ; J
+0215   207D D3          			.DB keep %256         ; K
+0216   207E CC          			.DB ld_cnt %256       ; L
+0217   207F B4          			.DB match %256        ; M
+0218   2080 BE          			.DB testn %256        ; N
+0219   2081 8C          			.DB error %256        ; O
+0220   2082 F9          			.DB co %256           ; P
+0221   2083 8C          			.DB error %256        ; Q
+0222   2084 B0          			.DB retn %256         ; R
+0223   2085 9B          			.DB subr %256         ; S
+0224   2086 96          			.DB type %256         ; T
+0225   2087 F0          			.DB user %256         ; U
+0226   2088 8C          			.DB error %256        ; V
+0227   2089 8C          			.DB error %256        ; W
+0228   208A C8          			.DB exch %256         ; X
+0229   208B BD          			.DB testy %256        ; Y
+0230   208C             ;end of lookup table
+0231   208C             ;now for the subroutines called by exec. these are -
+0232   208C             ;end1,error,exch,get,inc,jump,keep,lcntr,match,
+0233   208C             ;retn,subr,testn,testy and type
+0234   208C             ;note the order of these next three subroutines as
+0235   208C             ;they 'fall through' from one to another
+0236   208C             ;if we arrive at either error or end1 we have finished
+0237   208C             ;executing the user program and must go back to the 
+0238   208C             ;start in this case the contents of de are no longer 
+0239   208C             ;of any importance
+0240   208C             
+0241   208C 0E 3F       error:		ld c,$3f        ;load a question mark
+0242   208E CD F9 20    			call co         ;print it as we have an error
+0243   2091 2B          end1:		dec hl          ;back up to show the character
+0244   2092                                         ;which has caused the trouble
+0245   2092 11 00 20    			ld de, start    ;get ready to go back to start
+0246   2095 D5          			push de         ;start address to top of stack
+0247   2096 16 00       type:		ld d,0          ;set com flag to type
+0248   2098 C3 2D 20    			jp com          ;go and print line, the return
+0249   209B                                         ;at the end of com sends us
+0250   209B                                         ;back to exec unless we came
+0251   209B                                         ;here by way of error or end1
+0252   209B                                         ;when it sends us to the start
+0253   209B                                         
+0254   209B 22 00 22    subr:		ld (radr),hl    ;save address of this marker
+0255   209E                                         ;for use later as the return
+0256   209E                                         ;address.as it is a number
+0257   209E                                         ;exec will skip over it for
+0258   209E                                         ;us when we come back
+0259   209E             ;once the return address has been saved, the rest of the 
+0260   209E             ;subroutine operation is identical to a jump
+0261   209E             ;so "subr" falls through to "jump" at this point
+0262   209E             
+0263   209E             ;first we use vcom to get the marker number to a  to
+0264   209E             ;change it from an ascii number to binary and then
+0265   209E             ;to subtract one  ------ the result from all this
+0266   209E             ;is the marker counter which vcom puts in d for us
+0267   209E             ;vcom checks to see that the marker number is not
+0268   209E             ;<1 or >9 and goes to error if it is
+0269   209E             ;vcom does more than this as it is also used by the
+0270   209E             ;get and keep routines,but the fact that it corrupts
+0271   209E             ;hl is of no concern to us as we are about to reload
+0272   209E             ;them anyway
+0273   209E CD E1 20    jump:		call vcom       ;get the marker counter to d
+0274   20A1 21 2D 22    			ld hl,uprog     ;start looking for markers from
+0275   20A4                                         ;beginning of user program
+0276   20A4 3E 2A       			ld a,$2a        ;* this is what we are looking for
+0277   20A6 BE          jloop:		cp (hl)         ;found one at this address?
+0278   20A7 23          			inc hl          ;point to next user address
+0279   20A8 C2 A6 20    			jp nz,jloop     ;no we haven't,keep looking
+0280   20AB                         
+0281   20AB             ;ah,we have found one - but is it the correct one?
+0282   20AB 15                      dec d           ;if it is d will now be negative
+0283   20AC F2 A6 20    			jp p,jloop      ;bother,wrong one - keep looking
+0284   20AF C9          			ret             ;got it,now carry on execution
+0285   20B0                                         ;from where we found it
+0286   20B0             			
+0287   20B0             			
+0288   20B0 2A 00 22    retn:		ld hl,(radr)    ;where were we in the user's
+0289   20B3                                         ;program when we came to do this
+0290   20B3                                         ;subroutine?
+0291   20B3 C9          			ret             ;carry on execution from there
+0292   20B4             			
+0293   20B4 7E          match:      ld a,(hl)       ;get correct answer to a
+0294   20B5 23                      inc hl          ;point to next user command
+0295   20B6 91                      sub c           ;zero result if they matched
+0296   20B7 06 AF                   ld b,$af        ;set "yes" flag in case they did
+0297   20B9 C8                      ret z           ;they did - carry on
+0298   20BA 06 00                   ld b,$00        ;they did not  - set "no" flag
+0299   20BC C9                      ret             ;and now carry on
+0300   20BD             			
+0301   20BD             			
+0302   20BD 3E          testy:		.DB $3E         ;if we come in here this, plus 
+0303   20BE                                         ;the next byte will be read by
+0304   20BE                                         ;the processor as a single
+0305   20BE                                         ;instruction to load af (hex) to
+0306   20BE                                         ;register a, i.e. as ld a,0afh
+0307   20BE AF          testn:		xor a           ;if we come in here we just
+0308   20BF                                         ;clear to a zero
+0309   20BF B8          			cp b            ;test result of last match ??
+0310   20C0                                         ;b? with a if we are looking for
+0311   20C0                                         ;"yes" a will be af if we are
+0312   20C0                                         ;looking for "no" a will be 0
+0313   20C0 C8          			ret z           ;0 means test passed so carry on
+0314   20C1                                         ;with the rest of this user line
+0315   20C1                                         
+0316   20C1             ;if the test was failed we must skip to the end
+0317   20C1             ;of this user line and carry on execution from there. we use
+0318   20C1             ;the jloop routine to search for the cr at the end of 
+0319   20C1             ;this user line, first setting up to find only 
+0320   20C1             ;one cr
+0321   20C1 3E 0D       skip:		ld a,$0d              ;$0d is ascii for cr-what we want
+0322   20C3 16 00       			ld d,$00              ;so we stop at the first one
+0323   20C5 C3 A6 20    			jp jloop              ;jloop does the rest and we
+0324   20C8                                               ;return from the end of it to
+0325   20C8                                               ;exec and carry on
+0326   20C8 7B          exch:		ld a,e                ;put e into a
+0327   20C9 59          			ld e,c                ;put c into e
+0328   20CA 4F          			ld c,a                ;and a into c
+0329   20CB C9          			ret                   ;and carry on
+0330   20CC                         
+0331   20CC 5E          ld_cnt:		ld e,(hl)             ;load the counter
+0332   20CD 23          			inc hl                ;move over that character
+0333   20CE C9          			ret                   ;back to exec for more
+0334   20CF             			
+0335   20CF 1D          dec_cnt:	dec e                 ;decrement counter
+0336   20D0 C9          			ret                   ;back to exec for more
+0337   20D1             			
+0338   20D1 1C          inc_cnt:	inc e                 ;increment counter
+0339   20D2 C9          			ret                   ;back to exec for more
+0340   20D3             			
+0341   20D3 E5          keep:		push hl               ;we need some room
+0342   20D4 CD E1 20    			call vcom             ;find address where to 
+0343   20D7 71          			ld (hl),c             ;save c
+0344   20D8 E1          			pop hl                ;restore hl
+0345   20D9 C9          			ret                   ;and back to exec for more
+0346   20DA             			
+0347   20DA E5          get:		push hl               ;we need some room
+0348   20DB CD E1 20    			call vcom             ;find address where to
+0349   20DE 4E          			ld c,(hl)             ;load c from
+0350   20DF E1          			pop hl                ;restore hl
+0351   20E0 C9          			ret                   ;and back to exec for more
+0352   20E1             			
+0353   20E1 7E          vcom:		ld a,(hl)             ;which variable or marker?
+0354   20E2             
+0355   20E2             ;note we don't skip over variable or marker as
+0356   20E2             ;exec will do it for us if we did the error routine
+0357   20E2             ;would not show us the whole of the offending 
+0358   20E2             ;statement!
+0359   20E2             
+0360   20E2 D6 31       			sub $31                ;convert to binary -1
+0361   20E4             ;if variable or marker * was <1 it will now be 256-*
+0362   20E4             ;and the check in the next line will pick it up too
+0363   20E4             
+0364   20E4 FE 09       			cp $09                 ;>9 or <1? impossible!
+0365   20E6 D2 8C 20    			jp nc,error            ;so go and complain
+0366   20E9             
+0367   20E9             ;the next instruction is only of use if we are
+0368   20E9             ;working out the marker counter - but it does not
+0369   20E9             ;do any harm if we are working out a variable 
+0370   20E9             ;address
+0371   20E9             
+0372   20E9 57          			ld d,a                 ;put it in d in case
+0373   20EA             ;now to work out the address of the particular
+0374   20EA             ;storage location identified by the binary number in a
+0375   20EA             ;this is of no use (or harm) if we are working out
+0376   20EA             ;the marker counter!
+0377   20EA 21 04 22    			ld hl,vbase            ;point to storage location hl
+0378   20ED 85          			add a,l                ;add the index from a to the 
+0379   20EE                                                ;least significant byte of the
+0380   20EE                                                ;base address which is in l
+0381   20EE 6F          			ld l,a                 ;and put the answer into l so
+0382   20EF                                                ;hl now points to the wanted
+0383   20EF                                                ;storage location
+0384   20EF C9          			ret                    ;return to whoever called us
+0385   20F0             
+0386   20F0             ;the next line provides a linkage out of this
+0387   20F0             ;page for the user statement. at present it is
+0388   20F0             ;flagged as an error. when you use it change the value
+0389   20F0             ;of the address to jump to
+0390   20F0 C3 8C 20    user:		jp error               ;'U' is not implemented yet
+0391   20F3             
+0392   20F3             ;the next few lines handle the single character
+0393   20F3             ;input and output as written here they use two of 
+0394   20F3             ;my monitor's subroutines and so will need altering
+0395   20F3             ;to suit your system MI gets a single character
+0396   20F3             ;from the terminal to a, does not echo it and 
+0397   20F3             ;does not strip off the parity bit (bit 7)  MO
+0398   20F3             ;prints the single character in c on the terminal
+0399   20F3             ;you will probably have to rewrite all the code
+0400   20F3             ;between the lines of dashes
+0401   20F3             
+0402   20F3                         ;---------------------------------------------------
+0403   20F3             ;MI         .equ   RXDATA      ;address of my monitor
+0404   20F3                                            ;input routine
+0405   20F3             ;MO         .equ   TXDATA      ;address of my monitor
+0406   20F3                                            ;output routine
+0407   20F3                                            
+0408   20F3 CD 2E 21    ci:         call RXDATA        ;get a character
+0409   20F6 E6 7F       			and $7f            ;strip off parity bit
+0410   20F8 4F                      ld  c,a            ;put in c ready to echo
+0411   20F9 CD FE 20    co:			call TXDATA        ;print character in c
+0412   20FC 79          			ld  a,c            ;copy it back to a
+0413   20FD C9          			ret                ;and return to whoever called us
+0414   20FE                         ;---------------------------------------------------
+0415   20FE             
+0416   20FE             ;--------------------------------------------------
+0417   20FE             ; SOUTHERN CROSS MONITOR  BIT BANGED SERIAL ROUTINES
+0418   20FE             ;---------------------------------------------------
+0419   20FE             ;
+0420   20FE             ; I/O PORT ADDRESS
+0421   20FE             ;
+0422   20FE~            #IFDEF TEC-1F
+0423   20FE~            KEYBUF:      .EQU 00H             ;MM74C923N KEYBOARD ENCODER
+0424   20FE~            SCAN:        .EQU 01H             ;DISPLAY SCAN LATCH
+0425   20FE~            DISPLY:      .EQU 02H             ;DISPLAY LATCH
+0426   20FE~            PORT3:       .EQU 03H             ;ST3 (8X8), STROBE (RELAY BOARD) DATLATCH (DAT BOARD)
+0427   20FE~            PORT4:       .EQU 04H             ;ST4 (8X8), LCD 'E' (DAT BOARD)
+0428   20FE~            PORT5:       .EQU 05H
+0429   20FE~            PORT6:       .EQU 06H
+0430   20FE~            PORT7:       .EQU 07H             ;ENABLE/DISABLE SINGLE STEPPER (IF INSTALLED)
+0431   20FE             #ELSE
+0432   20FE             IO0:         .EQU 80H             ;IO PORT 0
+0433   20FE             IO1:         .EQU 81H             ;IO PORT 1
+0434   20FE             IO2:         .EQU 82H             ;IO PORT 2
+0435   20FE             IO3:         .EQU 83H             ;IO PORT 3
+0436   20FE             DISPLY:      .EQU 84H             ;DISPLAY LATCH
+0437   20FE             SCAN:        .EQU 85H             ;DISPLAY SCAN LATCH
+0438   20FE             KEYBUF:      .EQU 86H             ;KEYBOARD BUFFER
+0439   20FE             IO7:         .EQU 87H             ;ENABLE/DISABLE SINGLE STEPPER (IF INSTALLED)
+0440   20FE             #ENDIF
+0441   20FE             ;
+0442   20FE             ; BAUD RATE CONSTANTS
+0443   20FE             ;
+0444   20FE             B300:	.EQU	0220H	;300 BAUD
+0445   20FE             B1200:	.EQU	0080H	;1200 BAUD
+0446   20FE             B2400:	.EQU	003FH	;2400 BAUD
+0447   20FE             B4800:	.EQU	001BH	;4800 BAUD
+0448   20FE             B9600:	.EQU	000BH	;9600 BAUD
+0449   20FE             ;------------------------
+0450   20FE             ; SERIAL TRANSMIT ROUTINE
+0451   20FE             ;------------------------
+0452   20FE             ;TRANSMIT BYTE SERIALLY ON DOUT
+0453   20FE             ;
+0454   20FE             ; ENTRY : C = BYTE TO TRANSMIT
+0455   20FE             ;  EXIT : NO REGISTERS MODIFIED
+0456   20FE             ;
+0457   20FE F5          TXDATA:	PUSH	AF
+0458   20FF C5          	PUSH	BC
+0459   2100 E5          	PUSH	HL
+0460   2101 21 1B 00        LD	HL,B4800
+0461   2104 22 02 22        LD	(BAUD),HL	;DEFAULT SERIAL=4800 BAUD
+0462   2107 2A 02 22    	LD	HL,(BAUD)
+0463   210A             ;
+0464   210A             ; TRANSMIT START BIT
+0465   210A             ;
+0466   210A AF          	XOR	A
+0467   210B D3 85       	OUT	(SCAN),A
+0468   210D CD 61 21    	CALL	BITIME
+0469   2110             ;
+0470   2110             ; TRANSMIT DATA
+0471   2110             ;
+0472   2110 06 08       	LD	B,08H
+0473   2112 CB 09       	RRC	C
+0474   2114 CB 09       NXTBIT:	RRC	C	;SHIFT BITS TO D6,
+0475   2116 79          	LD	A,C	;LSB FIRST AND OUTPUT
+0476   2117 E6 40       	AND	40H	;THEM FOR ONE BIT TIME.
+0477   2119 D3 85       	OUT	(SCAN),A
+0478   211B CD 61 21    	CALL	BITIME
+0479   211E 10 F4       	DJNZ	NXTBIT
+0480   2120             ;
+0481   2120             ; SEND STOP BITS
+0482   2120             ;
+0483   2120 3E 40       	LD	A,40H
+0484   2122 D3 85       	OUT	(SCAN),A
+0485   2124 CD 61 21    	CALL	BITIME
+0486   2127 CD 61 21    	CALL	BITIME
+0487   212A E1          	POP	HL
+0488   212B C1          	POP	BC
+0489   212C F1          	POP	AF
+0490   212D C9          	RET
+0491   212E             ;-----------------------
+0492   212E             ; SERIAL RECEIVE ROUTINE
+0493   212E             ;-----------------------
+0494   212E             ;RECEIVE SERIAL BYTE FROM DIN
+0495   212E             ;
+0496   212E             ; ENTRY : NONE
+0497   212E             ;  EXIT : A= RECEIVED BYTE IF CARRY CLEAR
+0498   212E             ;
+0499   212E             ; REGISTERS MODIFIED A AND F
+0500   212E             ;
+0501   212E C5          RXDATA:	PUSH	BC
+0502   212F E5          	PUSH	HL
+0503   2130             ;
+0504   2130             ; WAIT FOR START BIT 
+0505   2130             ;
+0506   2130 21 1B 00            LD	HL,B4800
+0507   2133 22 02 22            LD	(BAUD),HL	;DEFAULT SERIAL=4800 BAUD
+0508   2136             
+0509   2136 DB 86       RXDAT1: IN	A,(KEYBUF)
+0510   2138 CB 7F       	   BIT	7,A
+0511   213A 20 FA       	   JR	NZ,RXDAT1	;NO START BIT
+0512   213C             ;
+0513   213C             ; DETECTED START BIT
+0514   213C             ;
+0515   213C 2A 02 22    	LD	HL,(BAUD)
+0516   213F CB 3C       	SRL	H
+0517   2141 CB 1D       	RR	L 	;DELAY FOR HALF BIT TIME
+0518   2143 CD 61 21    	CALL 	BITIME
+0519   2146 DB 86       	IN	A,(KEYBUF)
+0520   2148 CB 7F       	BIT	7,A
+0521   214A 20 EA       	JR	NZ,RXDAT1	;START BIT NOT VALID
+0522   214C             ;
+0523   214C             ; DETECTED VALID START BIT,READ IN DATA
+0524   214C             ;
+0525   214C 06 08       	LD	B,08H
+0526   214E 2A 02 22    RXDAT2:	LD	HL,(BAUD)
+0527   2151 CD 61 21    	CALL	BITIME	;DELAY ONE BIT TIME
+0528   2154 DB 86       	IN	A,(KEYBUF)
+0529   2156 CB 17       	RL	A
+0530   2158 CB 19       	RR	C	;SHIFT BIT INTO DATA REG
+0531   215A 10 F2       	DJNZ	RXDAT2
+0532   215C 79          	LD	A,C
+0533   215D B7          	OR	A	;CLEAR CARRY FLAG
+0534   215E E1              POP	HL
+0535   215F C1          	POP	BC
+0536   2160 C9          	RET
+0537   2161             ;---------------
+0538   2161             ; BIT TIME DELAY
+0539   2161             ;---------------
+0540   2161             ;DELAY FOR ONE SERIAL BIT TIME
+0541   2161             ;ENTRY : HL = DELAY TIME
+0542   2161             ; NO REGISTERS MODIFIED
+0543   2161             ;
+0544   2161 E5          BITIME:	PUSH	HL
+0545   2162 D5          	PUSH	DE
+0546   2163 11 01 00    	LD	DE,0001H
+0547   2166 ED 52       BITIM1:	SBC	HL,DE
+0548   2168 D2 66 21    	JP	NC,BITIM1
+0549   216B D1          	POP	DE
+0550   216C E1          	POP	HL
+0551   216D C9          	RET
+0552   216E                 
+0553   216E             
+0554   2200             			.ORG $2200
+0555   2200             radr:       .block 2
+0556   2202             BAUD:       .block 2
+0557   2204             vbase:      .block 9         ; 9 bytes for user variables
+0558   220D                         .block 32        ; allow some room for the stack
+0559   222D             uprog:      .equ  $          ; User program Starts Here
+0560   222D                 .end
+tasm: Number of errors = 0
