@@ -16,7 +16,7 @@ Download the appropriate hex file to your Southern Cross or TEC-1F using the ser
 
 Run the program from $2000, the program will do a CR LF and it's ready to go!
 
-The program is stored in memory as strings with a CR terminator and has an 'entry pointer' that allows lines to be entered and edited in 'Command Mode'.
+The user program is stored in memory as strings with a CR terminator and has an 'entry pointer' that allows lines to be entered and edited in 'Command Mode'.
 
 There are five commands;
 
